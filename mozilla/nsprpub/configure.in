@@ -511,7 +511,7 @@ if test "$target" != "$host"; then
 
     AC_MSG_CHECKING([whether the $host compiler ($HOST_CC $HOST_CFLAGS $HOST_LDFLAGS) works])
     AC_TRY_COMPILE([], [return(0);], 
-        [ac_cv_prog_host_cc_works=1 AC_MSG_RESULT([yes])],
+        [ac_cv_prog_host_cc_works=1],
         AC_MSG_ERROR([installation or configuration problem: $host compiler $HOST_CC cannot create executables.]) )
 
     CC=$_SAVE_CC
@@ -2384,7 +2384,7 @@ mips-sony-newsos*)
     AC_DEFINE(XP_PC)
     AC_DEFINE(BSD_SELECT)
     AC_DEFINE(TCPV40HDRS)
-    LIB_SUFFIX=lib
+    LIB_SUFFIX=a
     DLL_SUFFIX=dll
     RC=rc.exe
     PR_MD_ARCH_DIR=os2
@@ -2394,18 +2394,18 @@ mips-sony-newsos*)
     RESOLVE_LINK_SYMBOLS=1
 
     AC_DEFINE(OS2)
-    AR=emxomfar
+    AR=ar
     AR_FLAGS='r $@'
-    CFLAGS="$CFLAGS -Wall -Zomf"
-    CXXFLAGS="$CFLAGS -Wall -Zomf"
+    CFLAGS="$CFLAGS -Wall"
+    CXXFLAGS="$CFLAGS -Wall"
     MKSHLIB='$(CC) $(DSO_LDOPTS) -o $@'
     DSO_CFLAGS=
     DSO_LDOPTS='-Zomf -Zdll'
-    LDFLAGS='-Zmap'
+    LDFLAGS='-Zomf -Zmap'
     _OPTIMIZE_FLAGS="-O2 -s"
     _DEBUG_FLAGS="-g -fno-inline"
     if test -n "$MOZ_OPTIMIZE"; then
-      DSO_LDOPTS="$DSO_LDOPTS -Zlinker /EXEPACK:2 -Zlinker /PACKCODE -Zlinker /PACKDATA"
+      DSO_LDOPTS="$DSO_LDOPTS"
     fi
     IMPLIB='emximp -o'
     FILTER='emxexp -o'
