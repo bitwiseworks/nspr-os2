@@ -42,7 +42,7 @@
 #define GETCWD_CAN_MALLOC
 #endif
 
-#if defined(LINUX) || defined(__GNU__) || defined(__GLIBC__) 
+#if defined(LINUX) || defined(__GNU__) || defined(__GLIBC__)
 #include <getopt.h>
 #endif
 
@@ -54,6 +54,12 @@
 
 #ifdef QNX
 #define d_ino d_stat.st_ino
+#endif
+
+#if defined(__OS2__)
+#define OPEN_FLAGS O_BINARY
+#else
+#define OPEN_FLAGS 0
 #endif
 
 static void
@@ -72,7 +78,7 @@ mkdirs(char *path, mode_t mode)
     char *cp;
     struct stat sb;
     int res;
-    
+
     while (*path == '/' && path[1] == '/')
 	path++;
     for (cp = strrchr(path, '/'); cp && cp != path && cp[-1] == '/'; cp--)
@@ -150,6 +156,13 @@ main(int argc, char **argv)
 	  case 'd':
 	    dodir = 1;
 	    break;
+#if defined(__OS2__)
+      /* no proper symlink support so far */
+      case 'l':
+      case 'L':
+      case 'R':
+        break;
+#else
 	  case 'l':
 	    dolink = 1;
 	    break;
@@ -161,6 +174,7 @@ main(int argc, char **argv)
 	  case 'R':
 	    dolink = dorelsymlink = 1;
 	    break;
+#endif
 	  case 'm':
 	    mode = strtoul(optarg, &cp, 8);
 	    if (mode == 0 && cp == optarg)
@@ -283,12 +297,12 @@ main(int argc, char **argv)
 	    }
 	} else {
 	    /* Copy from name to toname, which might be the same file. */
-	    fromfd = open(name, O_RDONLY);
+	    fromfd = open(name, O_RDONLY | OPEN_FLAGS);
 	    if (fromfd < 0 || fstat(fromfd, &sb) < 0)
 		fail("cannot access %s", name);
 	    if (exists && (!S_ISREG(tosb.st_mode) || access(toname, W_OK) < 0))
 		(void) (S_ISDIR(tosb.st_mode) ? rmdir : unlink)(toname);
-	    tofd = open(toname, O_CREAT | O_WRONLY, 0666);
+	    tofd = open(toname, O_CREAT | O_WRONLY | OPEN_FLAGS, 0666);
 	    if (tofd < 0)
 		fail("cannot create %s", toname);
 
@@ -307,6 +321,7 @@ main(int argc, char **argv)
 
 	    if (ftruncate(tofd, sb.st_size) < 0)
 		fail("cannot truncate %s", toname);
+#if !defined(__OS2__)
 	    if (dotimes) {
 		utb.actime = sb.st_atime;
 		utb.modtime = sb.st_mtime;
@@ -319,6 +334,7 @@ main(int argc, char **argv)
 	    if (chmod(toname, mode) < 0)
 #endif
 		fail("cannot change mode of %s", toname);
+#endif
 	    if ((owner || group) && fchown(tofd, uid, gid) < 0)
 		fail("cannot change owner of %s", toname);
 
@@ -326,6 +342,16 @@ main(int argc, char **argv)
 	    if (close(tofd) < 0)
 		fail("cannot write to %s", toname);
 	    close(fromfd);
+#if defined(__OS2__)
+	    if (chmod(toname, (mode & (S_IREAD | S_IWRITE))) < 0)
+		fail("cannot change mode of %s", toname);
+	    if (dotimes) {
+		utb.actime = sb.st_atime;
+		utb.modtime = sb.st_mtime;
+		if (utime(toname, &utb) < 0)
+		    fail("cannot set times of %s", toname);
+	    }
+#endif
 	}
 
 	free(toname);
