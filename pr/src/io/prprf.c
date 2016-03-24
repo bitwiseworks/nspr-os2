@@ -1,39 +1,7 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is the Netscape Portable Runtime (NSPR).
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998-2000
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
 ** Portable safe sprintf code.
@@ -50,6 +18,10 @@
 #include "prlog.h"
 #include "prmem.h"
 
+#if defined(_MSC_VER) && _MSC_VER < 1900
+#define snprintf _snprintf
+#endif
+
 /*
 ** WARNING: This code may *NOT* call PR_LOG (because PR_LOG calls it)
 */
@@ -65,7 +37,7 @@ struct SprintfStateStr {
 
     char *base;
     char *cur;
-    PRUint32 maxlen;
+    PRUint32 maxlen;  /* Must not exceed PR_INT32_MAX. */
 
     int (*func)(void *arg, const char *sp, PRUint32 len);
     void *arg;
@@ -86,12 +58,19 @@ struct NumArg {
 	double d;
 	const char *s;
 	int *ip;
+#ifdef WIN32
+	const WCHAR *ws;
+#endif
     } u;
 };
 
 #define NAS_DEFAULT_NUM 20  /* default number of NumberedArgument array */
 
-
+/*
+** For numeric types, the signed versions must have even values,
+** and their corresponding unsigned versions must have the subsequent
+** odd value.
+*/
 #define TYPE_INT16	0
 #define TYPE_UINT16	1
 #define TYPE_INTN	2
@@ -103,6 +82,9 @@ struct NumArg {
 #define TYPE_STRING	8
 #define TYPE_DOUBLE	9
 #define TYPE_INTSTR	10
+#ifdef WIN32
+#define TYPE_WSTRING	11
+#endif
 #define TYPE_UNKNOWN	20
 
 #define FLAG_LEFT	0x1
@@ -330,7 +312,7 @@ static int cvt_ll(SprintfState *ss, PRInt64 num, int width, int prec, int radix,
 ** Convert a double precision floating point number into its printable
 ** form.
 **
-** XXX stop using sprintf to convert floating point
+** XXX stop using snprintf to convert floating point
 */
 static int cvt_f(SprintfState *ss, double d, const char *fmt0, const char *fmt1)
 {
@@ -338,15 +320,14 @@ static int cvt_f(SprintfState *ss, double d, const char *fmt0, const char *fmt1)
     char fout[300];
     int amount = fmt1 - fmt0;
 
-    PR_ASSERT((amount > 0) && (amount < sizeof(fin)));
-    if (amount >= sizeof(fin)) {
-	/* Totally bogus % command to sprintf. Just ignore it */
+    if (amount <= 0 || amount >= sizeof(fin)) {
+	/* Totally bogus % command to snprintf. Just ignore it */
 	return 0;
     }
     memcpy(fin, fmt0, amount);
     fin[amount] = 0;
 
-    /* Convert floating point using the native sprintf code */
+    /* Convert floating point using the native snprintf code */
 #ifdef DEBUG
     {
         const char *p = fin;
@@ -356,14 +337,11 @@ static int cvt_f(SprintfState *ss, double d, const char *fmt0, const char *fmt1)
         }
     }
 #endif
-    sprintf(fout, fin, d);
-
-    /*
-    ** This assert will catch overflow's of fout, when building with
-    ** debugging on. At least this way we can track down the evil piece
-    ** of calling code and fix it!
-    */
-    PR_ASSERT(strlen(fout) < sizeof(fout));
+    memset(fout, 0, sizeof(fout));
+    snprintf(fout, sizeof(fout), fin, d);
+    /* Explicitly null-terminate fout because on Windows snprintf doesn't
+     * append a null-terminator if the buffer is too small. */
+    fout[sizeof(fout) - 1] = '\0';
 
     return (*ss->stuff)(ss, fout, strlen(fout));
 }
@@ -402,8 +380,8 @@ static int cvt_s(SprintfState *ss, const char *str, int width, int prec,
 
 /*
 ** BuildArgArray stands for Numbered Argument list Sprintf
-** for example,  
-**	fmp = "%4$i, %2$d, %3s, %1d";
+** for example,
+**	fmt = "%4$i, %2$d, %3s, %1d";
 ** the number must start from 1, and no gap among them
 */
 
@@ -541,6 +519,15 @@ static struct NumArg* BuildArgArray( const char *fmt, va_list ap, int* rv, struc
 	        nas[cn].type = TYPE_INT64;
 	        c = *p++;
 	    }
+	} else if (c == 'z') {
+	    if (sizeof(size_t) == sizeof(PRInt32)) {
+	        nas[ cn ].type = TYPE_INT32;
+	    } else if (sizeof(size_t) == sizeof(PRInt64)) {
+	        nas[ cn ].type = TYPE_INT64;
+	    } else {
+		nas[ cn ].type = TYPE_UNKNOWN;
+	    }
+	    c = *p++;
 	}
 
 	/* format */
@@ -573,8 +560,12 @@ static struct NumArg* BuildArgArray( const char *fmt, va_list ap, int* rv, struc
 	    }
 	    break;
 
-	case 'C':
 	case 'S':
+#ifdef WIN32
+	    nas[ cn ].type = TYPE_WSTRING;
+	    break;
+#endif
+	case 'C':
 	case 'E':
 	case 'G':
 	    /* XXX not supported I suppose */
@@ -653,6 +644,12 @@ static struct NumArg* BuildArgArray( const char *fmt, va_list ap, int* rv, struc
 	    nas[cn].u.s = va_arg( ap, char* );
 	    break;
 
+#ifdef WIN32
+	case TYPE_WSTRING:
+	    nas[cn].u.ws = va_arg( ap, WCHAR* );
+	    break;
+#endif
+
 	case TYPE_INTSTR:
 	    nas[cn].u.ip = va_arg( ap, int* );
 	    break;
@@ -690,6 +687,9 @@ static int dosprintf(SprintfState *ss, const char *fmt, va_list ap)
 	double d;
 	const char *s;
 	int *ip;
+#ifdef WIN32
+	const WCHAR *ws;
+#endif
     } u;
     const char *fmt0;
     static char *hex = "0123456789abcdef";
@@ -697,11 +697,13 @@ static int dosprintf(SprintfState *ss, const char *fmt, va_list ap)
     char *hexp;
     int rv, i;
     struct NumArg* nas = NULL;
-    struct NumArg* nap;
+    struct NumArg* nap = NULL;
     struct NumArg  nasArray[ NAS_DEFAULT_NUM ];
     char  pattern[20];
     const char* dolPt = NULL;  /* in "%4$.2f", dolPt will point to . */
-
+#ifdef WIN32
+    char *pBuf = NULL;
+#endif
 
     /*
     ** build an argument array, IF the fmt is numbered argument
@@ -820,6 +822,13 @@ static int dosprintf(SprintfState *ss, const char *fmt, va_list ap)
 		type = TYPE_INT64;
 		c = *fmt++;
 	    }
+	} else if (c == 'z') {
+	    if (sizeof(size_t) == sizeof(PRInt32)) {
+	    	type = TYPE_INT32;
+	    } else if (sizeof(size_t) == sizeof(PRInt64)) {
+	    	type = TYPE_INT64;
+	    }
+	    c = *fmt++;
 	}
 
 	/* format */
@@ -965,14 +974,43 @@ static int dosprintf(SprintfState *ss, const char *fmt, va_list ap)
 	    radix = 16;
 	    goto fetch_and_convert;
 
+#ifndef WIN32
+	  case 'S':
+	    /* XXX not supported I suppose */
+	    PR_ASSERT(0);
+	    break;
+#endif
+
 #if 0
 	  case 'C':
-	  case 'S':
 	  case 'E':
 	  case 'G':
 	    /* XXX not supported I suppose */
 	    PR_ASSERT(0);
 	    break;
+#endif
+
+#ifdef WIN32
+	  case 'S':
+	    u.ws = nas ? nap->u.ws : va_arg(ap, const WCHAR*);
+
+	    /* Get the required size in rv */
+	    rv = WideCharToMultiByte(CP_ACP, 0, u.ws, -1, NULL, 0, NULL, NULL);
+	    if (rv == 0)
+		rv = 1;
+	    pBuf = PR_MALLOC(rv);
+	    WideCharToMultiByte(CP_ACP, 0, u.ws, -1, pBuf, (int)rv, NULL, NULL);
+	    pBuf[rv-1] = '\0';
+
+	    rv = cvt_s(ss, pBuf, width, prec, flags);
+
+	    /* We don't need the allocated buffer anymore */
+	    PR_Free(pBuf);
+	    if (rv < 0) {
+		return rv;
+	    }
+	    break;
+
 #endif
 
 	  case 's':
@@ -1022,6 +1060,13 @@ static int FuncStuff(SprintfState *ss, const char *sp, PRUint32 len)
 {
     int rv;
 
+    /*
+    ** We will add len to ss->maxlen at the end of the function. First check
+    ** if ss->maxlen + len would overflow or be greater than PR_INT32_MAX.
+    */
+    if (PR_UINT32_MAX - ss->maxlen < len || ss->maxlen + len > PR_INT32_MAX) {
+	return -1;
+    }
     rv = (*ss->func)(ss->arg, sp, len);
     if (rv < 0) {
 	return rv;
@@ -1067,9 +1112,21 @@ static int GrowStuff(SprintfState *ss, const char *sp, PRUint32 len)
     PRUint32 newlen;
 
     off = ss->cur - ss->base;
+    if (PR_UINT32_MAX - len < off) {
+	/* off + len would be too big. */
+	return -1;
+    }
     if (off + len >= ss->maxlen) {
 	/* Grow the buffer */
-	newlen = ss->maxlen + ((len > 32) ? len : 32);
+	PRUint32 increment = (len > 32) ? len : 32;
+	if (PR_UINT32_MAX - ss->maxlen < increment) {
+	    /* ss->maxlen + increment would overflow. */
+	    return -1;
+	}
+	newlen = ss->maxlen + increment;
+	if (newlen > PR_INT32_MAX) {
+	    return -1;
+	}
 	if (ss->base) {
 	    newbase = (char*) PR_REALLOC(ss->base, newlen);
 	} else {
@@ -1172,8 +1229,8 @@ PR_IMPLEMENT(PRUint32) PR_vsnprintf(char *out, PRUint32 outlen,const char *fmt,
     SprintfState ss;
     PRUint32 n;
 
-    PR_ASSERT((PRInt32)outlen > 0);
-    if ((PRInt32)outlen <= 0) {
+    PR_ASSERT(outlen != 0 && outlen <= PR_INT32_MAX);
+    if (outlen == 0 || outlen > PR_INT32_MAX) {
 	return 0;
     }
 
@@ -1209,7 +1266,10 @@ PR_IMPLEMENT(char *) PR_vsprintf_append(char *last, const char *fmt, va_list ap)
 
     ss.stuff = GrowStuff;
     if (last) {
-	int lastlen = strlen(last);
+	size_t lastlen = strlen(last);
+	if (lastlen > PR_INT32_MAX) {
+	    return 0;
+	}
 	ss.base = last;
 	ss.cur = last + lastlen;
 	ss.maxlen = lastlen;
