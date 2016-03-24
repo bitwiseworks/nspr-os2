@@ -111,6 +111,24 @@ endif
 endif
 endif
 
+DEBUG_SYMFILE =
+DEBUG_SYMFILE_GEN =
+
+ifeq ($(OS_ARCH),OS2)
+ifndef MOZ_DEBUG
+ifdef MOZ_DEBUG_SYMBOLS
+ifneq ($(filter WLINK wlink,$(EMXOMFLD_TYPE)),)
+DEBUG_SYMFILE = $(basename $(1)).dbg
+OS_LDFLAGS += -Zlinker 'option symfile=$(basename $(@)).dbg'
+endif
+endif
+ifndef DEBUG_SYMFILE
+DEBUG_SYMFILE = $(basename $(1)).xqs
+DEBUG_SYMFILE_GEN = mapxqs $(basename $(1)).map -o $(basename $(1)).xqs
+endif
+endif
+endif # OS2
+
 ifndef TARGETS
 ifeq (,$(filter-out WINNT WINCE OS2,$(OS_ARCH)))
 TARGETS		= $(LIBRARY) $(SHARED_LIBRARY) $(IMPORT_LIBRARY)
@@ -183,12 +201,18 @@ distclean::
 install:: $(RELEASE_BINS) $(RELEASE_HEADERS) $(RELEASE_LIBS)
 ifdef RELEASE_BINS
 	$(NSINSTALL) -t -m 0755 $(RELEASE_BINS) $(DESTDIR)$(bindir)
+ifdef DEBUG_SYMFILE
+	$(foreach f,$(RELEASE_BINS),if test -f $(call DEBUG_SYMFILE,$f) ; then $(NSINSTALL) -t -m 0644 $(call DEBUG_SYMFILE,$f) $(DESTDIR)$(bindir) ; fi ;)
+endif
 endif
 ifdef RELEASE_HEADERS
 	$(NSINSTALL) -t -m 0644 $(RELEASE_HEADERS) $(DESTDIR)$(includedir)/$(include_subdir)
 endif
 ifdef RELEASE_LIBS
 	$(NSINSTALL) -t -m 0755 $(RELEASE_LIBS) $(DESTDIR)$(libdir)/$(lib_subdir)
+ifdef DEBUG_SYMFILE
+	$(foreach f,$(RELEASE_LIBS),if test -f $(call DEBUG_SYMFILE,$f) ; then $(NSINSTALL) -t -m 0644 $(call DEBUG_SYMFILE,$f) $(DESTDIR)$(libdir)/$(lib_subdir) ; fi ;)
+endif
 endif
 	+$(LOOP_OVER_DIRS)
 
@@ -208,6 +232,9 @@ ifdef RELEASE_BINS
 		true; \
 	fi
 	cp $(RELEASE_BINS) $(RELEASE_BIN_DIR)
+ifdef DEBUG_SYMFILE
+	$(foreach f,$(RELEASE_BINS),if test -f $(call DEBUG_SYMFILE,$f) ; then cp $(call DEBUG_SYMFILE,$f) $(RELEASE_BIN_DIR) ; fi ;)
+endif
 endif
 ifdef RELEASE_LIBS
 	@echo "Copying libraries to release directory"
@@ -224,6 +251,9 @@ ifdef RELEASE_LIBS
 		true; \
 	fi
 	cp $(RELEASE_LIBS) $(RELEASE_LIBS_DEST)
+ifdef DEBUG_SYMFILE
+	$(foreach f,$(RELEASE_LIBS),if test -f $(call DEBUG_SYMFILE,$f) ; then cp $(call DEBUG_SYMFILE,$f) $(RELEASE_LIBS_DEST) ; fi ;)
+endif
 endif
 ifdef RELEASE_HEADERS
 	@echo "Copying header files to release directory"
@@ -279,6 +309,13 @@ endif	# WINNT && !GCC
 ifdef ENABLE_STRIP
 	$(STRIP) $@
 endif
+ifdef DEBUG_SYMFILE_GEN
+	$(call DEBUG_SYMFILE_GEN,$@)
+endif
+
+ifdef DEBUG_SYMFILE
+$(call DEBUG_SYMFILE,$(PROGRAM)): $(PROGRAM)
+endif
 
 $(LIBRARY): $(OBJS)
 	@$(MAKE_OBJDIR)
@@ -332,6 +369,13 @@ endif	# WINNT && !GCC
 endif	# AIX 4.1
 ifdef ENABLE_STRIP
 	$(STRIP) $@
+endif
+ifdef DEBUG_SYMFILE_GEN
+	$(call DEBUG_SYMFILE_GEN,$@)
+endif
+
+ifdef DEBUG_SYMFILE
+$(call DEBUG_SYMFILE,$(SHARED_LIBRARY)): $(SHARED_LIBRARY)
 endif
 
 ################################################################################
