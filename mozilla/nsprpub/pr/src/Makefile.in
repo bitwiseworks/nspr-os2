@@ -343,7 +343,7 @@ INCLUDES = -I$(dist_includedir) -I$(topsrcdir)/pr/include -I$(topsrcdir)/pr/incl
 TINC = $(OBJDIR)/_pr_bld.h
 
 ifeq ($(OS_TARGET),OS2)
-PROD = nspr$(MOD_MAJOR_VERSION)k.$(DLL_SUFFIX)
+PROD = nspr$(MOD_MAJOR_VERSION).$(DLL_SUFFIX)
 else
 PROD = $(notdir $(SHARED_LIBRARY))
 endif
