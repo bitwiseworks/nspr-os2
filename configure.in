@@ -2464,7 +2464,7 @@ tools are selected during the Xcode/Developer Tools installation.])
     AC_DEFINE(XP_OS2)
     AC_DEFINE(XP_PC)
     AC_DEFINE(BSD_SELECT)
-    LIB_SUFFIX=lib
+    LIB_SUFFIX=a
     DLL_SUFFIX=dll
     RC=rc.exe
     PR_MD_ARCH_DIR=os2
@@ -2473,7 +2473,7 @@ tools are selected during the Xcode/Developer Tools installation.])
     RESOLVE_LINK_SYMBOLS=1
 
     AC_DEFINE(OS2)
-    AR=emxomfar
+    AR=ar
     AR_FLAGS='r $@'
     CFLAGS="$CFLAGS -Wall -Zomf"
     CXXFLAGS="$CFLAGS -Wall -Zomf"
