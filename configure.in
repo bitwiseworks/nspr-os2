@@ -2481,10 +2481,15 @@ tools are selected during the Xcode/Developer Tools installation.])
     DSO_CFLAGS=
     DSO_LDOPTS='-Zdll'
     LDFLAGS="$LDFLAGS -Zomf -Zmap"
+    if test "$EMXOMFLD_TYPE" = "WLINK" -o "$EMXOMFLD_TYPE" = "wlink"; then
+      LDFLAGS="$LDFLAGS -Zlinker 'DISABLE 1121'"
+    fi
     _OPTIMIZE_FLAGS="-O2"
     _DEBUG_FLAGS="-fno-inline"
     if test -n "$MOZ_OPTIMIZE"; then
-      DSO_LDOPTS="$DSO_LDOPTS -Zlinker /EXEPACK:2 -Zlinker /PACKCODE -Zlinker /PACKDATA"
+      if test "$EMXOMFLD_TYPE" != "WLINK" -a "$EMXOMFLD_TYPE" != "wlink"; then
+        DSO_LDOPTS="$DSO_LDOPTS -Zlinker /EXEPACK:2 -Zlinker /PACKCODE -Zlinker /PACKDATA"
+      fi
     fi
     IMPLIB='emximp -o'
     FILTER='emxexp -o'
