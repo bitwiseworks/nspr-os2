@@ -1,39 +1,7 @@
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is the Netscape Portable Runtime (NSPR).
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998-2000
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /***********************************************************************
 **
@@ -69,6 +37,7 @@
 #define PASS 0
 #define FAIL 1
 static int debug_mode = 0;
+static int failed_already = 0;
 
 static int _iterations = 1000;
 static int _clients = 1;
@@ -122,6 +91,7 @@ static void Test_Result (int result)
 			break;
 		case FAIL:
 			printf ("FAIL\n");
+			failed_already = 1;
 			break;
 		default:
 			break;
@@ -278,12 +248,23 @@ PRFileDesc *
 ServerSetup(void)
 {
     PRFileDesc *listenSocket;
+    PRSocketOptionData sockOpt;
     PRNetAddr serverAddr;
     PRThread *WorkerThread;
 
-    if ( (listenSocket = PR_NewTCPSocket()) == NULL) {
+    if ((listenSocket = PR_NewTCPSocket()) == NULL) {
         if (debug_mode) printf("\tServer error creating listen socket\n");
 		else Test_Result(FAIL);
+        return NULL;
+    }
+
+    sockOpt.option = PR_SockOpt_Reuseaddr;
+    sockOpt.value.reuse_addr = PR_TRUE;
+    if (PR_SetSocketOption(listenSocket, &sockOpt) != PR_SUCCESS) {
+        if (debug_mode) printf("\tServer error setting socket option: OS error %d\n",
+                PR_GetOSError());
+        else Test_Result(FAIL);
+        PR_Close(listenSocket);
         return NULL;
     }
 
@@ -292,7 +273,7 @@ ServerSetup(void)
     serverAddr.inet.port = PR_htons(PORT);
     serverAddr.inet.ip = PR_htonl(PR_INADDR_ANY);
 
-    if ( PR_Bind(listenSocket, &serverAddr) == PR_FAILURE) {
+    if (PR_Bind(listenSocket, &serverAddr) != PR_SUCCESS) {
         if (debug_mode) printf("\tServer error binding to server address: OS error %d\n",
                 PR_GetOSError());
 		else Test_Result(FAIL);
@@ -300,7 +281,7 @@ ServerSetup(void)
         return NULL;
     }
 
-    if ( PR_Listen(listenSocket, 128) == PR_FAILURE) {
+    if (PR_Listen(listenSocket, 128) != PR_SUCCESS) {
         if (debug_mode) printf("\tServer error listening to server socket\n");
 		else Test_Result(FAIL);
         PR_Close(listenSocket);
@@ -580,7 +561,7 @@ int main(int argc, char **argv)
 	Usage: test_name -d
 	*/
 	PLOptStatus os;
-	PLOptState *opt = PL_CreateOptState(argc, argv, "d:");
+	PLOptState *opt = PL_CreateOptState(argc, argv, "d");
 	while (PL_OPT_EOL != (os = PL_GetNextOpt(opt)))
     {
 		if (PL_OPT_BAD == os) continue;
@@ -638,5 +619,5 @@ int main(int argc, char **argv)
 
     PR_Cleanup();
 
-    return 0;
+    return failed_already;
 }

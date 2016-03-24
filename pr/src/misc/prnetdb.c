@@ -1,39 +1,7 @@
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is the Netscape Portable Runtime (NSPR).
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998-2000
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "primpl.h"
 
@@ -95,8 +63,7 @@ PRLock *_pr_dnsLock = NULL;
 
 #if defined(SOLARIS) || (defined(BSDI) && defined(_REENTRANT)) \
 	|| (defined(LINUX) && defined(_REENTRANT) \
-        && !(defined(__GLIBC__) && __GLIBC__ >= 2)) \
-        && !defined(ANDROID)
+        && defined(__GLIBC__) && __GLIBC__ < 2)
 #define _PR_HAVE_GETPROTO_R
 #define _PR_HAVE_GETPROTO_R_POINTER
 #endif
@@ -2030,7 +1997,7 @@ PR_IMPLEMENT(PRAddrInfo *) PR_GetAddrInfoByName(const char  *hostname,
 #endif
     {
         PRADDRINFO *res, hints;
-        PRStatus rv;
+        int rv;
 
         /*
          * we assume a RFC 2553 compliant getaddrinfo.  this may at some
@@ -2039,7 +2006,32 @@ PR_IMPLEMENT(PRAddrInfo *) PR_GetAddrInfoByName(const char  *hostname,
          */
 
         memset(&hints, 0, sizeof(hints));
-        hints.ai_flags = (flags & PR_AI_NOCANONNAME) ? 0: AI_CANONNAME;
+        if (!(flags & PR_AI_NOCANONNAME))
+            hints.ai_flags |= AI_CANONNAME;
+#ifdef AI_ADDRCONFIG
+        /* 
+         * Propagate AI_ADDRCONFIG to the GETADDRINFO call if PR_AI_ADDRCONFIG
+         * is set.
+         * 
+         * Need a workaround for loopback host addresses:         
+         * The problem is that in glibc and Windows, AI_ADDRCONFIG applies the
+         * existence of an outgoing network interface to IP addresses of the
+         * loopback interface, due to a strict interpretation of the
+         * specification.  For example, if a computer does not have any
+         * outgoing IPv6 network interface, but its loopback network interface
+         * supports IPv6, a getaddrinfo call on "localhost" with AI_ADDRCONFIG
+         * won't return the IPv6 loopback address "::1", because getaddrinfo
+         * thinks the computer cannot connect to any IPv6 destination,
+         * ignoring the remote vs. local/loopback distinction.
+         */
+        if ((flags & PR_AI_ADDRCONFIG) &&
+            strcmp(hostname, "localhost") != 0 &&
+            strcmp(hostname, "localhost.localdomain") != 0 &&
+            strcmp(hostname, "localhost6") != 0 &&
+            strcmp(hostname, "localhost6.localdomain6") != 0) {
+            hints.ai_flags |= AI_ADDRCONFIG;
+        }
+#endif
         hints.ai_family = (af == PR_AF_INET) ? AF_INET : AF_UNSPEC;
 
         /*
@@ -2052,6 +2044,12 @@ PR_IMPLEMENT(PRAddrInfo *) PR_GetAddrInfoByName(const char  *hostname,
         hints.ai_socktype = SOCK_STREAM;
 
         rv = GETADDRINFO(hostname, NULL, &hints, &res);
+#ifdef AI_ADDRCONFIG
+        if (rv == EAI_BADFLAGS && (hints.ai_flags & AI_ADDRCONFIG)) {
+            hints.ai_flags &= ~AI_ADDRCONFIG;
+            rv = GETADDRINFO(hostname, NULL, &hints, &res);
+        }
+#endif
         if (rv == 0)
             return (PRAddrInfo *) res;
 
@@ -2229,10 +2227,6 @@ PR_IMPLEMENT(PRStatus) PR_StringToNetAddr(const char *string, PRNetAddr *addr)
 #if !defined(_PR_HAVE_GETADDRINFO)
     return pr_StringToNetAddrFB(string, addr);
 #else
-#if defined(_PR_INET6_PROBE)
-    if (!_pr_ipv6_is_present())
-        return pr_StringToNetAddrFB(string, addr);
-#endif
     /*
      * getaddrinfo with AI_NUMERICHOST is much slower than pr_inet_aton on some
      * platforms, such as Mac OS X (bug 404399), Linux glibc 2.10 (bug 344809),
@@ -2241,6 +2235,11 @@ PR_IMPLEMENT(PRStatus) PR_StringToNetAddr(const char *string, PRNetAddr *addr)
      */
     if (!strchr(string, '%'))
         return pr_StringToNetAddrFB(string, addr);
+
+#if defined(_PR_INET6_PROBE)
+    if (!_pr_ipv6_is_present())
+        return pr_StringToNetAddrFB(string, addr);
+#endif
 
     return pr_StringToNetAddrGAI(string, addr);
 #endif
@@ -2264,7 +2263,7 @@ static PRStatus pr_NetAddrToStringGNI(
         md_af = AF_INET6;
 #ifndef _PR_HAVE_SOCKADDR_LEN
         addrcopy = *addr;
-        addrcopy.raw.family = AF_INET6;
+        addrcopy.raw.family = md_af;
         addrp = &addrcopy;
 #endif
     }

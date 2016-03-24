@@ -1,39 +1,7 @@
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is the Netscape Portable Runtime (NSPR).
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998-2000
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef primpl_h___
 #define primpl_h___
@@ -80,6 +48,10 @@ typedef struct PRSegment PRSegment;
 #include <semaphore.h>
 #elif defined(_PR_HAVE_SYSV_SEMAPHORES)
 #include <sys/sem.h>
+#endif
+
+#ifdef HAVE_SYSCALL
+#include <sys/syscall.h>
 #endif
 
 /*************************************************************************
@@ -192,12 +164,7 @@ struct _PT_Notified
 #define _PT_THREAD_UNBLOCK_INTERRUPT(thr)			\
 		(thr->interrupt_blocked = 0)
 
-#ifdef GC_LEAK_DETECTOR
-/* All threads are GCable. */
-#define _PT_IS_GCABLE_THREAD(thr) 1
-#else
 #define _PT_IS_GCABLE_THREAD(thr) ((thr)->state & PT_THREAD_GCABLE)
-#endif /* GC_LEAK_DETECTOR */
 
 /* 
 ** Possible values for thread's suspend field
@@ -222,6 +189,17 @@ typedef struct PTDebug
 #endif /* defined(DEBUG) */
 
 NSPR_API(void) PT_FPrintStats(PRFileDesc *fd, const char *msg);
+
+/*
+ * On Linux and its derivatives POSIX priority scheduling works only for
+ * real-time threads. On those platforms we set thread's nice values
+ * instead which requires us to track kernel thread IDs for each POSIX
+ * thread we create.
+ */
+#if defined(LINUX) && defined(HAVE_SETPRIORITY) && \
+    ((defined(HAVE_SYSCALL) && defined(SYS_gettid)) || defined(HAVE_GETTID))
+#define _PR_NICE_PRIORITY_SCHEDULING
+#endif
 
 #else /* defined(_PR_PTHREADS) */
 
@@ -561,6 +539,8 @@ NSPR_API(void) _PR_PauseCPU(void);
     _PR_MD_UNLOCK(&(_lock)->ilock);
     
 extern void _PR_UnblockLockWaiter(PRLock *lock);
+extern PRStatus _PR_InitLock(PRLock *lock);
+extern void _PR_FreeLock(PRLock *lock);
 
 #define _PR_LOCK_PTR(_qp) \
     ((PRLock*) ((char*) (_qp) - offsetof(PRLock,links)))
@@ -572,8 +552,11 @@ extern void _PR_UnblockLockWaiter(PRLock *lock);
 #define _PR_CVAR_UNLOCK(_cvar) \
     _PR_MD_UNLOCK(&(_cvar)->ilock);
 
+extern PRStatus _PR_InitCondVar(PRCondVar *cvar, PRLock *lock);
+extern void _PR_FreeCondVar(PRCondVar *cvar);
 extern PRStatus _PR_WaitCondVar(
     PRThread *thread, PRCondVar *cvar, PRLock *lock, PRIntervalTime timeout);
+extern void _PR_NotifyCondVar(PRCondVar *cvar, PRThread *me);
 extern PRUint32 _PR_CondVarToString(PRCondVar *cvar, char *buf, PRUint32 buflen);
 
 NSPR_API(void) _PR_Notify(PRMonitor *mon, PRBool all, PRBool sticky);
@@ -633,12 +616,7 @@ NSPR_API(void) _PR_Notify(PRMonitor *mon, PRBool all, PRBool sticky);
 #define        _PR_ADJUST_STACKSIZE(stackSize)
 #endif
 
-#ifdef GC_LEAK_DETECTOR
-/* All threads are GCable. */
-#define _PR_IS_GCABLE_THREAD(thr) 1
-#else
 #define _PR_IS_GCABLE_THREAD(thr) ((thr)->flags & _PR_GCABLE_THREAD)
-#endif /* GC_LEAK_DETECTOR */
 
 #define _PR_PENDING_INTERRUPT(thr)					\
 		(!((thr)->flags & _PR_INTERRUPT_BLOCKED) && ((thr)->flags & _PR_INTERRUPT))
@@ -1018,6 +996,9 @@ extern void _PR_MD_YIELD(void);
 
 extern void _PR_MD_SET_PRIORITY(_MDThread *md, PRThreadPriority newPri);
 #define    _PR_MD_SET_PRIORITY _MD_SET_PRIORITY
+
+extern void _PR_MD_SET_CURRENT_THREAD_NAME(const char *name);
+#define    _PR_MD_SET_CURRENT_THREAD_NAME _MD_SET_CURRENT_THREAD_NAME
 
 NSPR_API(void) _PR_MD_SUSPENDALL(void);
 #define    _PR_MD_SUSPENDALL _MD_SUSPENDALL
@@ -1444,8 +1425,6 @@ struct PRLock {
 #endif
 };
 
-extern void _PR_InitLocks(void);
-
 struct PRCondVar {
     PRLock *lock;               /* associated lock that protects the condition */
 #if defined(_PR_PTHREADS)
@@ -1470,13 +1449,38 @@ struct PRCondVar {
 struct PRMonitor {
     const char* name;           /* monitor name for debugging */
 #if defined(_PR_PTHREADS)
-    PRLock lock;                /* the lock structure */
-    pthread_t owner;            /* the owner of the lock or invalid */
-    PRCondVar *cvar;            /* condition variable queue */
+    pthread_mutex_t lock;       /* lock is only held when accessing fields
+                                 * of the PRMonitor, instead of being held
+                                 * while the monitor is entered. The only
+                                 * exception is notifyTimes, which is
+                                 * protected by the monitor. */
+    pthread_t owner;            /* the owner of the monitor or invalid */
+    pthread_cond_t entryCV;     /* for threads waiting to enter the monitor */
+
+    pthread_cond_t waitCV;      /* for threads waiting on the monitor */
+    PRInt32 refCount;           /* reference count, an atomic variable.
+                                 * PR_NewMonitor adds a reference to the
+                                 * newly created PRMonitor, and
+                                 * PR_DestroyMonitor releases that reference.
+                                 * PR_ExitMonitor adds a reference before
+                                 * unlocking the internal lock if it needs to
+                                 * signal entryCV, and releases the reference
+                                 * after signaling entryCV. */
 #else  /* defined(_PR_PTHREADS) */
-    PRCondVar *cvar;            /* associated lock and condition variable queue */
+    PRLock lock;                /* lock is only held when accessing fields
+                                 * of the PRMonitor, instead of being held
+                                 * while the monitor is entered. The only
+                                 * exception is notifyTimes, which is
+                                 * protected by the monitor. */
+    PRThread *owner;            /* the owner of the monitor or invalid */
+    PRCondVar entryCV;          /* for threads waiting to enter the monitor */
+
+    PRCondVar waitCV;           /* for threads waiting on the monitor */
 #endif /* defined(_PR_PTHREADS) */
     PRUint32 entryCount;        /* # of times re-entered */
+    PRIntn notifyTimes;         /* number of pending notifies for waitCV.
+                                 * The special value -1 means a broadcast
+                                 * (PR_NotifyAll). */
 };
 
 /************************************************************************/
@@ -1495,8 +1499,6 @@ struct PRSemaphore {
 #endif /* defined(_PR_PTHREADS) */
 #endif /* defined(_PR_BTHREADS) */
 };
-
-NSPR_API(void) _PR_InitSem(void);
 
 /*************************************************************************/
 
@@ -1575,9 +1577,15 @@ struct PRThread {
     PRIntn  errorStringLength;      /* textLength from last call to PR_SetErrorText() */
     PRInt32 errorStringSize;        /* malloc()'d size of buffer | zero */
     char *errorString;              /* current error string | NULL */
+    char *name;                     /* thread's name */
 
 #if defined(_PR_PTHREADS)
     pthread_t id;                   /* pthread identifier for the thread */
+    PRBool idSet;                   /* whether 'id' has been set. Protected by
+                                     * pt_book.ml. */
+#ifdef _PR_NICE_PRIORITY_SCHEDULING
+    pid_t tid;                      /* Linux-specific kernel thread ID */
+#endif
     PRBool okToDelete;              /* ok to delete the PRThread struct? */
     PRCondVar *waiting;             /* where the thread is waiting | NULL */
     void *sp;                       /* recorded sp for garbage collection */
@@ -1765,6 +1773,7 @@ struct PRDirUTF16 {
 }; 
 #endif /* MOZ_UNICODE */
 
+extern void _PR_InitLocks(void);
 extern void _PR_InitSegs(void);
 extern void _PR_InitStacks(void);
 extern void _PR_InitTPD(void);
@@ -1782,7 +1791,6 @@ extern void _PR_InitDtoa(void);
 extern void _PR_InitTime(void);
 extern void _PR_InitMW(void);
 extern void _PR_InitRWLocks(void);
-extern void _PR_NotifyCondVar(PRCondVar *cvar, PRThread *me);
 extern void _PR_CleanupThread(PRThread *thread);
 extern void _PR_CleanupCallOnce(void);
 extern void _PR_CleanupMW(void);
@@ -1803,9 +1811,6 @@ extern void _PR_CleanupTPD(void);
 extern void _PR_Cleanup(void);
 extern void _PR_LogCleanup(void);
 extern void _PR_InitLayerCache(void);
-#ifdef GC_LEAK_DETECTOR
-extern void _PR_InitGarbageCollector(void);
-#endif
 
 extern PRBool _pr_initialized;
 extern void _PR_ImplicitInitialization(void);
@@ -1867,7 +1872,6 @@ extern void _PR_DestroyZones(void);
         && !defined(_PR_PTHREADS) && !defined(_PR_GLOBAL_THREADS_ONLY) \
         && !defined(PURIFY) \
         && !defined(DARWIN) \
-        && !defined(NEXTSTEP) \
         && !defined(QNX) \
         && !(defined (UNIXWARE) && defined (USE_SVR4_THREADS))
 #define _PR_OVERRIDE_MALLOC
@@ -1997,6 +2001,12 @@ extern PRStatus _PR_MD_MEM_UNMAP(void *addr, PRUint32 size);
 
 extern PRStatus _PR_MD_CLOSE_FILE_MAP(PRFileMap *fmap);
 #define _PR_MD_CLOSE_FILE_MAP _MD_CLOSE_FILE_MAP
+
+extern PRStatus _PR_MD_SYNC_MEM_MAP(
+    PRFileDesc *fd,
+    void *addr,
+    PRUint32 len);
+#define _PR_MD_SYNC_MEM_MAP _MD_SYNC_MEM_MAP
 
 /* Named Shared Memory */
 
