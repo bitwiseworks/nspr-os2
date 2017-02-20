@@ -496,13 +496,6 @@ extern APIRET (* APIENTRY QueryThreadContext)(TID, ULONG, PCONTEXTRECORD);
 #define _pr_current_Thread (_system_tls[_pr_tid-1].__pr_current_thread)
 */
 
-/* Some simple mappings of Windows API's to OS/2 API's to make our lives a
- * little bit easier.  Only add one here if it is a DIRECT mapping.  We are
- * not emulating anything.  Just mapping.
- */
-#define FreeLibrary(x) DosFreeModule((HMODULE)x)
-#define OutputDebugStringA(x)
-                               
 extern int _MD_os2_get_nonblocking_connect_error(int osfd);
 
 #endif /* nspr_os2_defs_h___ */

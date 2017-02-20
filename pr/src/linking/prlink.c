@@ -3,6 +3,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#if defined(XP_OS2) && defined(__KLIBC__)
+#define INCL_EXAPIS /* For DosLoadModuleEx */
+#endif
+
 #include "primpl.h"
 
 #include <string.h>
@@ -704,7 +708,13 @@ pr_LoadLibraryByPathname(const char *name, PRIntn flags)
         UCHAR pszError[_MAX_PATH];
         ULONG ulRc = NO_ERROR;
 
+#ifdef __KLIBC__
+          /* Use a fork-friendly version of DosLoadModule.
+           * Also see http://trac.netlabs.org/libc/ticket/372. */
+          ulRc = DosLoadModuleEx(pszError, _MAX_PATH, (PSZ) name, &h);
+#else
           ulRc = DosLoadModule(pszError, _MAX_PATH, (PSZ) name, &h);
+#endif
           if (ulRc != NO_ERROR) {
               oserr = ulRc;
               PR_DELETE(lm);
@@ -1002,8 +1012,13 @@ PR_UnloadLibrary(PRLibrary *lib)
 #endif /* XP_UNIX */
 #ifdef XP_PC
     if (lib->dlh) {
+#ifdef XP_OS2
+        DosFreeModule(lib->dlh);
+        lib->dlh = NULLHANDLE;
+#else
         FreeLibrary((HINSTANCE)(lib->dlh));
         lib->dlh = (HINSTANCE)NULL;
+#endif  /* XP_OS2 */
     }
 #endif  /* XP_PC */
 
