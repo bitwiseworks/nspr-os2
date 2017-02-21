@@ -1013,7 +1013,13 @@ PR_UnloadLibrary(PRLibrary *lib)
 #ifdef XP_PC
     if (lib->dlh) {
 #ifdef XP_OS2
+#ifdef __KLIBC__
+        /* DosLoadModuleEx must be accompanied by DosFreeModuleEx to avoid
+         * fork failures (EINVAL due to invalid hmod in kLIBC) */
+        DosFreeModuleEx(lib->dlh);
+#else
         DosFreeModule(lib->dlh);
+#endif
         lib->dlh = NULLHANDLE;
 #else
         FreeLibrary((HINSTANCE)(lib->dlh));
