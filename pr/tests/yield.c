@@ -10,6 +10,9 @@
 #include "private/pprmisc.h"
 #include <windows.h>
 #else
+#ifdef __EMX__
+#define OS2EMX_PLAIN_CHAR
+#endif
 #include "primpl.h"
 #define INCL_BASE
 #define INCL_PM

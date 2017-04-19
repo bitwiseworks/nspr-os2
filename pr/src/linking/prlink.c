@@ -705,15 +705,15 @@ pr_LoadLibraryByPathname(const char *name, PRIntn flags)
 #ifdef XP_OS2  /* Why isn't all this stuff in MD code?! */
     {
         HMODULE h;
-        UCHAR pszError[_MAX_PATH];
+        char pszError[_MAX_PATH];
         ULONG ulRc = NO_ERROR;
 
 #ifdef __KLIBC__
           /* Use a fork-friendly version of DosLoadModule.
            * Also see http://trac.netlabs.org/libc/ticket/372. */
-          ulRc = DosLoadModuleEx(pszError, _MAX_PATH, (PSZ) name, &h);
+          ulRc = DosLoadModuleEx(pszError, _MAX_PATH, name, &h);
 #else
-          ulRc = DosLoadModule(pszError, _MAX_PATH, (PSZ) name, &h);
+          ulRc = DosLoadModule(pszError, _MAX_PATH, name, &h);
 #endif
           if (ulRc != NO_ERROR) {
               oserr = ulRc;

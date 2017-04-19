@@ -9,6 +9,9 @@
 #ifndef NO_LONG_LONG
 #define INCL_LONGLONG
 #endif
+#ifdef __EMX__
+#define OS2EMX_PLAIN_CHAR
+#endif
 #define INCL_BASE
 #define INCL_PM
 #include <os2.h>
