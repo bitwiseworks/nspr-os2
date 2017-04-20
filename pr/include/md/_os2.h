@@ -16,6 +16,7 @@
 #define INCL_PM
 #include <os2.h>
 #include <sys/select.h>
+#include <dirent.h>
 
 #include "prio.h"
 
@@ -94,14 +95,7 @@ struct _MDSegment {
 #undef PROFILE_LOCKS
 
 struct _MDDir {
-    HDIR           d_hdl;
-    union {
-        FILEFINDBUF3  small;
-        FILEFINDBUF3L large;
-    } d_entry;
-    PRBool           firstEntry;     /* Is this the entry returned
-                                      * by FindFirstFile()? */
-    PRUint32         magic;          /* for debugging */
+    DIR *d;
 };
 
 struct _MDCVar {

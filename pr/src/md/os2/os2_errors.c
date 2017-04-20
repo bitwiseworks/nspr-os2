@@ -6,16 +6,6 @@
 #include "prerror.h"
 #include "primpl.h"
 
-/*
- * NOTE: On OS/2 we use both POSIX and native OS/2 API errors as OSError in
- * PR_SetError so that it's impossible for the caller of PR_GetOSError to
- * distinguish where is what. We plan to get rid of the remains of direct OS/2
- * API usage in favor of kLIBC (POSIX) API everywhere in NSPR so this problem
- * will go away then. An alternative is to map native OS/2 API errors to
- * POSIX errors (or grab such a mapping from kLIBC) but this looks like an
- * overkill now. BTW, exactly the same problem exists on Windows.
- */
-
 /* POSIX erros (copied from unix_errors.c w/some additions at the end) */
 void _MD_os2_map_default_error(PRInt32 err)
 {
@@ -250,6 +240,13 @@ void _MD_os2_map_default_error(PRInt32 err)
 }
 
 /* Native OS/2 API errors */
+#if 0
+/*
+ * NOTE: Disabled fo now since no longer used anywhere. However, there are
+ * some places in NSPR where Dos* APIs are used directly and where errors are
+ * reports ted like PR_SetError(PR_UNKNOWN_ERROR, rc). Such calls should be
+ * replaced with _MD_os2_map_default_dos_error for better invormativeness.
+ */
 static void _MD_os2_map_default_dos_error(PRInt32 err)
 {
     PRErrorCode prError;
@@ -322,10 +319,11 @@ static void _MD_os2_map_default_dos_error(PRInt32 err)
     }
     PR_SetError(prError, err);
 }
+#endif
 
 void _MD_os2_map_opendir_error(PRInt32 err)
 {
-    _MD_os2_map_default_dos_error(err);
+    _MD_os2_map_default_error(err);
 }
 
 void _MD_os2_map_closedir_error(PRInt32 err)
@@ -333,12 +331,11 @@ void _MD_os2_map_closedir_error(PRInt32 err)
     PRErrorCode prError;
 
     switch (err) {
-        case ERROR_FILE_NOT_FOUND:
-        case ERROR_ACCESS_DENIED:
+        case EINVAL:
             prError = PR_BAD_DESCRIPTOR_ERROR;
             break;
         default:
-            _MD_os2_map_default_dos_error(err);
+            _MD_os2_map_default_error(err);
             return;
     }
     PR_SetError(prError, err);
@@ -349,11 +346,23 @@ void _MD_os2_readdir_error(PRInt32 err)
     PRErrorCode prError;
 
     switch (err) {
-        case ERROR_FILE_NOT_FOUND:
-            prError = PR_BAD_DESCRIPTOR_ERROR;
+        case 0:
+        case ENOENT:
+            prError = PR_NO_MORE_FILES_ERROR;
+            break;
+#ifdef EOVERFLOW
+        case EOVERFLOW:
+            prError = PR_IO_ERROR;
+            break;
+#endif
+        case EINVAL:
+            prError = PR_IO_ERROR;
+            break;
+        case ENXIO:
+            prError = PR_IO_ERROR;
             break;
         default:
-            _MD_os2_map_default_dos_error(err);
+            _MD_os2_map_default_error(err);
             return;
     }
     PR_SetError(prError, err);
@@ -361,10 +370,9 @@ void _MD_os2_readdir_error(PRInt32 err)
 
 void _MD_os2_map_delete_error(PRInt32 err)
 {
-    _MD_os2_map_default_dos_error(err);
+    _MD_os2_map_default_error(err);
 }
 
-/* The error code for stat() is in errno. */
 void _MD_os2_map_stat_error(PRInt32 err)
 {
     _MD_os2_map_default_error(err);
@@ -377,7 +385,7 @@ void _MD_os2_map_fstat_error(PRInt32 err)
 
 void _MD_os2_map_rename_error(PRInt32 err)
 {
-    _MD_os2_map_default_dos_error(err);
+    _MD_os2_map_default_error(err);
 }
 
 void _MD_os2_map_access_error(PRInt32 err)
@@ -387,53 +395,42 @@ void _MD_os2_map_access_error(PRInt32 err)
 
 void _MD_os2_map_mkdir_error(PRInt32 err)
 {
-    _MD_os2_map_default_dos_error(err);
+    _MD_os2_map_default_error(err);
 }
 
 void _MD_os2_map_rmdir_error(PRInt32 err)
 {
-    _MD_os2_map_default_dos_error(err);
+    _MD_os2_map_default_error(err);
 }
 
 void _MD_os2_map_read_error(PRInt32 err)
 {
-    _MD_os2_map_default_dos_error(err);
+    _MD_os2_map_default_error(err);
 }
 
 void _MD_os2_map_transmitfile_error(PRInt32 err)
 {
-    _MD_os2_map_default_dos_error(err);
+    _MD_os2_map_default_error(err);
 }
 
 void _MD_os2_map_write_error(PRInt32 err)
 {
-    PRErrorCode prError;
-
-    switch (err) {
-        case ERROR_NOT_ENOUGH_MEMORY:
-        case ERROR_MORE_DATA:
-            prError = PR_NO_DEVICE_SPACE_ERROR;
-            break;
-        default:
-            _MD_os2_map_default_dos_error(err);
-            return;
-    }
-    PR_SetError(prError, err);
+    _MD_os2_map_default_error(err);
 }
 
 void _MD_os2_map_lseek_error(PRInt32 err)
 {
-    _MD_os2_map_default_dos_error(err);
+    _MD_os2_map_default_error(err);
 }
 
 void _MD_os2_map_fsync_error(PRInt32 err)
 {
-    _MD_os2_map_default_dos_error(err);
+    _MD_os2_map_default_error(err);
 }
 
 void _MD_os2_map_close_error(PRInt32 err)
 {
-    _MD_os2_map_default_dos_error(err);
+    _MD_os2_map_default_error(err);
 }
 
 void _MD_os2_map_socket_error(PRInt32 err)
@@ -538,7 +535,7 @@ void _MD_os2_map_setsockopt_error(PRInt32 err)
 
 void _MD_os2_map_open_error(PRInt32 err)
 {
-    _MD_os2_map_default_dos_error(err);
+    _MD_os2_map_default_error(err);
 }
 
 void _MD_os2_map_gethostname_error(PRInt32 err)
@@ -567,5 +564,5 @@ void _MD_os2_map_select_error(PRInt32 err)
 
 void _MD_os2_map_lockf_error(PRInt32 err)
 {
-    _MD_os2_map_default_dos_error(err);
+    _MD_os2_map_default_error(err);
 }
