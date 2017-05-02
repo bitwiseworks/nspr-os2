@@ -109,6 +109,9 @@ _PR_MD_OPEN(const char *name, PRIntn flags, int mode)
 #endif
     }
 
+    if (flags & PR_CREATE_FILE)
+        osflags |= O_CREAT;
+
     /* Files opened by NSPR are not expected to perform EOL translation */
     rv = open(name, osflags | O_BINARY, mode);
 
