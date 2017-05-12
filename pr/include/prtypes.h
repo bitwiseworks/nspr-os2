@@ -581,14 +581,8 @@ typedef unsigned long PRUword;
 ** The macro can be used only in places where an "extern" declaration is
 ** allowed.
 */
-#if defined(__GNUC__) && \
-    (__STDC_VERSION__ >= 201104 || __GNUC__ > 4 || \
-    (__GNUC__ == 4 && 6 <= __GNUC_MINOR__))
-#define PR_STATIC_ASSERT(condition) _Static_assert(condition, #condition)
-#else
 #define PR_STATIC_ASSERT(condition) \
     extern void pr_static_assert(int arg[(condition) ? 1 : -1])
-#endif
 
 PR_END_EXTERN_C
 
