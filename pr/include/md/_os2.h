@@ -302,8 +302,8 @@ extern PRInt32 _MD_Accept(PRFileDesc *fd, PRNetAddr *raddr, PRUint32 *rlen,
 
 #define _MD_NEW_LOCK                  (_PR_MD_NEW_LOCK)
 #define _MD_FREE_LOCK(lock)           (DosCloseMutexSem((lock)->mutex))
-#define _MD_LOCK(lock)                (DosRequestMutexSem((lock)->mutex, SEM_INDEFINITE_WAIT))
-#define _MD_TEST_AND_LOCK(lock)       (DosRequestMutexSem((lock)->mutex, SEM_INDEFINITE_WAIT),0)
+#define _MD_LOCK(lock)                (SafeRequestMutexSem((lock)->mutex, SEM_INDEFINITE_WAIT))
+#define _MD_TEST_AND_LOCK(lock)       (SafeRequestMutexSem((lock)->mutex, SEM_INDEFINITE_WAIT),0)
 #define _MD_UNLOCK                    (_PR_MD_UNLOCK)
 
 /* --- lock and cv waiting --- */
@@ -487,6 +487,8 @@ typedef struct _CONTEXTRECORD {
 #endif
 
 extern APIRET (* APIENTRY QueryThreadContext)(TID, ULONG, PCONTEXTRECORD);
+extern ULONG (* APIENTRY SafeWaitEventSem)(HEV hev, ULONG ulTimeout);
+extern ULONG (* APIENTRY SafeRequestMutexSem)(HMTX hmtx, ULONG ulTimeout);
 
 /*
 #define _pr_tid            (((PTIB2)_getTIBvalue(offsetof(TIB, tib_ptib2)))->tib2_ultid)
