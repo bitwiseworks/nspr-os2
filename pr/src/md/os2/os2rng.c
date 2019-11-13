@@ -20,8 +20,9 @@ static BOOL clockTickTime(unsigned long *phigh, unsigned long *plow)
     QWORD qword = {0,0};
 
     rc = DosTmrQueryTime(&qword);
-    if (rc != NO_ERROR)
-       return FALSE;
+    if (rc != NO_ERROR) {
+        return FALSE;
+    }
 
     *phigh = qword.ulHi;
     *plow  = qword.ulLo;
@@ -38,8 +39,9 @@ extern PRSize _PR_MD_GetRandomNoise(void *buf, PRSize size )
     int nBytes = 0;
     time_t sTime;
 
-    if (size <= 0)
-       return 0;
+    if (size <= 0) {
+        return 0;
+    }
 
     clockTickTime(&high, &low);
 
@@ -49,16 +51,18 @@ extern PRSize _PR_MD_GetRandomNoise(void *buf, PRSize size )
     n += nBytes;
     size -= nBytes;
 
-    if (size <= 0)
-       return n;
+    if (size <= 0) {
+        return n;
+    }
 
     nBytes = sizeof(high) > size ? size : sizeof(high);
     memcpy(((char *)buf) + n, &high, nBytes);
     n += nBytes;
     size -= nBytes;
 
-    if (size <= 0)
-       return n;
+    if (size <= 0) {
+        return n;
+    }
 
     /* get the number of milliseconds that have elapsed since application started */
     val = clock();
@@ -68,8 +72,9 @@ extern PRSize _PR_MD_GetRandomNoise(void *buf, PRSize size )
     n += nBytes;
     size -= nBytes;
 
-    if (size <= 0)
-       return n;
+    if (size <= 0) {
+        return n;
+    }
 
     /* get the time in seconds since midnight Jan 1, 1970 */
     time(&sTime);

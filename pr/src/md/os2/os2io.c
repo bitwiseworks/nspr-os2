@@ -32,7 +32,7 @@ _PR_MD_WAIT(PRThread *thread, PRIntervalTime ticks)
     ULONG count;
 
     PRUint32 msecs = (ticks == PR_INTERVAL_NO_TIMEOUT) ?
-        SEM_INDEFINITE_WAIT : PR_IntervalToMilliseconds(ticks);
+                     SEM_INDEFINITE_WAIT : PR_IntervalToMilliseconds(ticks);
     rv = SafeWaitEventSem(thread->md.blocked_sema, msecs);
     DosResetEventSem(thread->md.blocked_sema, &count); 
     switch(rv) 
@@ -43,7 +43,7 @@ _PR_MD_WAIT(PRThread *thread, PRIntervalTime ticks)
         case ERROR_TIMEOUT:
             _PR_THREAD_LOCK(thread);
             if (thread->state == _PR_IO_WAIT) {
-			  ;
+                ;
             } else {
                 if (thread->wait.cvar != NULL) {
                     thread->wait.cvar = NULL;
@@ -69,14 +69,17 @@ _PR_MD_WAIT(PRThread *thread, PRIntervalTime ticks)
 PRStatus
 _PR_MD_WAKEUP_WAITER(PRThread *thread)
 {
-    if ( _PR_IS_NATIVE_THREAD(thread) ) 
+    if ( _PR_IS_NATIVE_THREAD(thread) )
     {
-        if (DosPostEventSem(thread->md.blocked_sema) != NO_ERROR)
+        if (DosPostEventSem(thread->md.blocked_sema) != NO_ERROR) {
             return PR_FAILURE;
-        else
+        }
+        else {
             return PR_SUCCESS;
+        }
     }
 }
+
 
 PRInt32
 _PR_MD_OPEN(const char *name, PRIntn flags, int mode)
@@ -298,7 +301,7 @@ _PR_MD_STAT(const char *fn, struct stat *info)
          * can be handled by _stat() on NT but not on Win95.
          *
          * We remove the backslash or slash at the end and
-         * try again.  
+         * try again.
          *
          * Not sure if this happens on OS/2 or not,
          * but it doesn't hurt to be careful.
@@ -306,7 +309,7 @@ _PR_MD_STAT(const char *fn, struct stat *info)
 
         int len = strlen(fn);
         if (len > 0 && len <= _MAX_PATH
-                && (fn[len - 1] == '\\' || fn[len - 1] == '/')) {
+            && (fn[len - 1] == '\\' || fn[len - 1] == '/')) {
             char newfn[_MAX_PATH + 1];
 
             strcpy(newfn, fn);
@@ -432,14 +435,14 @@ _PR_MD_GETOPENFILEINFO(const PRFileDesc *fd, PRFileInfo *info)
 PRInt32
 _PR_MD_RENAME(const char *from, const char *to)
 {
-   PRInt32 rv;
+    PRInt32 rv;
 
-   rv = rename(from, to);
-   if (rv == -1) {
-       _PR_MD_MAP_RENAME_ERROR(_MD_ERRNO());
-   }
+    rv = rename(from, to);
+    if (rv == -1) {
+        _PR_MD_MAP_RENAME_ERROR(_MD_ERRNO());
+    }
 
-   return rv;
+    return rv;
 }
 
 PRInt32
@@ -464,9 +467,9 @@ _PR_MD_ACCESS(const char *name, PRAccessHow how)
     }
     rv = access(name, amode);
 
-    if (rv < 0)
+    if (rv < 0) {
         _PR_MD_MAP_ACCESS_ERROR(_MD_ERRNO());
-
+    }
     return rv;
 }
 

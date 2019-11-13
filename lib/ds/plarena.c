@@ -17,8 +17,6 @@
 #include "prlock.h"
 #include "prinit.h"
 
-static PLArena *arena_freelist;
-
 #ifdef PL_ARENAMETER
 static PLArenaStats *arena_stats_list;
 
@@ -29,49 +27,6 @@ static PLArenaStats *arena_stats_list;
 
 #define PL_ARENA_DEFAULT_ALIGN  sizeof(double)
 
-static PRLock    *arenaLock;
-static PRCallOnceType once;
-static const PRCallOnceType pristineCallOnce;
-
-/*
-** InitializeArenas() -- Initialize arena operations.
-**
-** InitializeArenas() is called exactly once and only once from 
-** LockArena(). This function creates the arena protection 
-** lock: arenaLock.
-**
-** Note: If the arenaLock cannot be created, InitializeArenas()
-** fails quietly, returning only PR_FAILURE. This percolates up
-** to the application using the Arena API. He gets no arena
-** from PL_ArenaAllocate(). It's up to him to fail gracefully
-** or recover.
-**
-*/
-static PRStatus InitializeArenas( void )
-{
-    PR_ASSERT( arenaLock == NULL );
-    arenaLock = PR_NewLock();
-    if ( arenaLock == NULL )
-        return PR_FAILURE;
-    else
-        return PR_SUCCESS;
-} /* end ArenaInitialize() */
-
-static PRStatus LockArena( void )
-{
-    PRStatus rc = PR_CallOnce( &once, InitializeArenas );
-
-    if ( PR_FAILURE != rc )
-        PR_Lock( arenaLock );
-    return(rc);
-} /* end LockArena() */
-
-static void UnlockArena( void )
-{
-    PR_Unlock( arenaLock );
-    return;
-} /* end UnlockArena() */
-
 PR_IMPLEMENT(void) PL_InitArenaPool(
     PLArenaPool *pool, const char *name, PRUint32 size, PRUint32 align)
 {
@@ -80,34 +35,40 @@ PR_IMPLEMENT(void) PL_InitArenaPool(
      * align = 1 to 32.
      */
     static const PRUint8 pmasks[33] = {
-         0,                                               /*  not used */
-         0, 1, 3, 3, 7, 7, 7, 7,15,15,15,15,15,15,15,15,  /*  1 ... 16 */
-        31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31}; /* 17 ... 32 */
+        0,                                               /*  not used */
+        0, 1, 3, 3, 7, 7, 7, 7,15,15,15,15,15,15,15,15,  /*  1 ... 16 */
+        31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31   /* 17 ... 32 */
+    };
 
-    if (align == 0)
+    if (align == 0) {
         align = PL_ARENA_DEFAULT_ALIGN;
+    }
 
-    if (align < sizeof(pmasks)/sizeof(pmasks[0]))
+    if (align < sizeof(pmasks)/sizeof(pmasks[0])) {
         pool->mask = pmasks[align];
-    else
+    }
+    else {
         pool->mask = PR_BITMASK(PR_CeilingLog2(align));
+    }
 
     pool->first.next = NULL;
     /* Set all three addresses in pool->first to the same dummy value.
      * These addresses are only compared with each other, but never
      * dereferenced. */
     pool->first.base = pool->first.avail = pool->first.limit =
-        (PRUword)PL_ARENA_ALIGN(pool, &pool->first + 1);
+            (PRUword)PL_ARENA_ALIGN(pool, &pool->first + 1);
     pool->current = &pool->first;
     /*
      * Compute the net size so that each arena's gross size is |size|.
      * sizeof(PLArena) + pool->mask is the header and alignment slop
      * that PL_ArenaAllocate adds to the net size.
      */
-    if (size > sizeof(PLArena) + pool->mask)
+    if (size > sizeof(PLArena) + pool->mask) {
         pool->arenasize = size - (sizeof(PLArena) + pool->mask);
-    else
+    }
+    else {
         pool->arenasize = size;
+    }
 #ifdef PL_ARENAMETER
     memset(&pool->stats, 0, sizeof pool->stats);
     pool->stats.name = strdup(name);
@@ -119,22 +80,15 @@ PR_IMPLEMENT(void) PL_InitArenaPool(
 
 /*
 ** PL_ArenaAllocate() -- allocate space from an arena pool
-** 
+**
 ** Description: PL_ArenaAllocate() allocates space from an arena
-** pool. 
+** pool.
 **
 ** First, try to satisfy the request from arenas starting at
-** pool->current.
-**
-** If there is not enough space in the arena pool->current, try
-** to claim an arena, on a first fit basis, from the global
-** freelist (arena_freelist).
-** 
-** If no arena in arena_freelist is suitable, then try to
-** allocate a new arena from the heap.
+** pool->current. Then try to allocate a new arena from the heap.
 **
 ** Returns: pointer to allocated space or NULL
-** 
+**
 ** Notes: The original implementation had some difficult to
 ** solve bugs; the code was difficult to read. Sometimes it's
 ** just easier to rewrite it. I did that. larryh.
@@ -145,16 +99,17 @@ PR_IMPLEMENT(void) PL_InitArenaPool(
 
 PR_IMPLEMENT(void *) PL_ArenaAllocate(PLArenaPool *pool, PRUint32 nb)
 {
-    PLArena *a;   
+    PLArena *a;
     char *rp;     /* returned pointer */
     PRUint32 nbOld;
 
     PR_ASSERT((nb & pool->mask) == 0);
-    
+
     nbOld = nb;
     nb = (PRUword)PL_ARENA_ALIGN(pool, nb); /* force alignment */
-    if (nb < nbOld)
+    if (nb < nbOld) {
         return NULL;
+    }
 
     /* attempt to allocate from arenas at pool->current */
     {
@@ -169,39 +124,8 @@ PR_IMPLEMENT(void *) PL_ArenaAllocate(PLArenaPool *pool, PRUint32 nb)
         } while( NULL != (a = a->next) );
     }
 
-    /* attempt to allocate from arena_freelist */
+    /* attempt to allocate from the heap */
     {
-        PLArena *p; /* previous pointer, for unlinking from freelist */
-
-        /* lock the arena_freelist. Make access to the freelist MT-Safe */
-        if ( PR_FAILURE == LockArena())
-            return(0);
-
-        for ( a = arena_freelist, p = NULL; a != NULL ; p = a, a = a->next ) {
-            if ( nb <= a->limit - a->base )  {
-                if ( p == NULL )
-                    arena_freelist = a->next;
-                else
-                    p->next = a->next;
-                UnlockArena();
-                a->avail = a->base;
-                rp = (char *)a->avail;
-                a->avail += nb;
-                /* the newly allocated arena is linked after pool->current 
-                *  and becomes pool->current */
-                a->next = pool->current->next;
-                pool->current->next = a;
-                pool->current = a;
-                if ( NULL == pool->first.next )
-                    pool->first.next = a;
-                return(rp);
-            }
-        }
-        UnlockArena();
-    }
-
-    /* attempt to allocate from the heap */ 
-    {  
         PRUint32 sz = PR_MAX(pool->arenasize, nb);
         if (PR_UINT32_MAX - sz < sizeof *a + pool->mask) {
             a = NULL;
@@ -216,13 +140,14 @@ PR_IMPLEMENT(void *) PL_ArenaAllocate(PLArenaPool *pool, PRUint32 nb)
             rp = (char *)a->avail;
             a->avail += nb;
             PR_ASSERT(a->avail <= a->limit);
-            /* the newly allocated arena is linked after pool->current 
+            /* the newly allocated arena is linked after pool->current
             *  and becomes pool->current */
             a->next = pool->current->next;
             pool->current->next = a;
             pool->current = a;
-            if ( NULL == pool->first.next )
+            if ( NULL == pool->first.next ) {
                 pool->first.next = a;
+            }
             PL_COUNT_ARENA(pool,++);
             COUNT(pool, nmallocs);
             return(rp);
@@ -238,18 +163,21 @@ PR_IMPLEMENT(void *) PL_ArenaGrow(
 {
     void *newp;
 
-    if (PR_UINT32_MAX - size < incr)
+    if (PR_UINT32_MAX - size < incr) {
         return NULL;
+    }
     PL_ARENA_ALLOCATE(newp, pool, size + incr);
-    if (newp)
+    if (newp) {
         memcpy(newp, p, size);
+    }
     return newp;
 }
 
-static void ClearArenaList(PLArena *a, PRInt32 pattern)
+PR_IMPLEMENT(void) PL_ClearArenaPool(PLArenaPool *pool, PRInt32 pattern)
 {
+    PLArena *a;
 
-    for (; a; a = a->next) {
+    for (a = pool->first.next; a; a = a->next) {
         PR_ASSERT(a->base <= a->avail && a->avail <= a->limit);
         a->avail = a->base;
         PL_CLEAR_UNUSED_PATTERN(a, pattern);
@@ -257,48 +185,26 @@ static void ClearArenaList(PLArena *a, PRInt32 pattern)
     }
 }
 
-PR_IMPLEMENT(void) PL_ClearArenaPool(PLArenaPool *pool, PRInt32 pattern)
-{
-    ClearArenaList(pool->first.next, pattern);
-}
-
 /*
  * Free tail arenas linked after head, which may not be the true list head.
  * Reset pool->current to point to head in case it pointed at a tail arena.
  */
-static void FreeArenaList(PLArenaPool *pool, PLArena *head, PRBool reallyFree)
+static void FreeArenaList(PLArenaPool *pool, PLArena *head)
 {
-    PLArena **ap, *a;
-
-    ap = &head->next;
-    a = *ap;
-    if (!a)
+    PLArena *a = head->next;
+    if (!a) {
         return;
-
-#ifdef DEBUG
-    ClearArenaList(a, PL_FREE_PATTERN);
-#endif
-
-    if (reallyFree) {
-        do {
-            *ap = a->next;
-            PL_CLEAR_ARENA(a);
-            PL_COUNT_ARENA(pool,--);
-            PR_DELETE(a);
-        } while ((a = *ap) != 0);
-    } else {
-        /* Insert the whole arena chain at the front of the freelist. */
-        do {
-            PL_MAKE_MEM_NOACCESS((void*)(*ap)->base,
-                                 (*ap)->limit - (*ap)->base);
-            ap = &(*ap)->next;
-        } while (*ap);
-        LockArena();
-        *ap = arena_freelist;
-        arena_freelist = a;
-        head->next = 0;
-        UnlockArena();
     }
+
+    head->next = NULL;
+
+    do {
+        PLArena *tmp = a;
+        a = a->next;
+        PL_CLEAR_ARENA(tmp);
+        PL_COUNT_ARENA(pool,--);
+        PR_DELETE(tmp);
+    } while (a);
 
     pool->current = head;
 }
@@ -310,7 +216,7 @@ PR_IMPLEMENT(void) PL_ArenaRelease(PLArenaPool *pool, char *mark)
     for (a = &pool->first; a; a = a->next) {
         if (PR_UPTRDIFF(mark, a->base) <= PR_UPTRDIFF(a->avail, a->base)) {
             a->avail = (PRUword)PL_ARENA_ALIGN(pool, mark);
-            FreeArenaList(pool, a, PR_FALSE);
+            FreeArenaList(pool, a);
             return;
         }
     }
@@ -318,19 +224,20 @@ PR_IMPLEMENT(void) PL_ArenaRelease(PLArenaPool *pool, char *mark)
 
 PR_IMPLEMENT(void) PL_FreeArenaPool(PLArenaPool *pool)
 {
-    FreeArenaList(pool, &pool->first, PR_FALSE);
+    FreeArenaList(pool, &pool->first);
     COUNT(pool, ndeallocs);
 }
 
 PR_IMPLEMENT(void) PL_FinishArenaPool(PLArenaPool *pool)
 {
-    FreeArenaList(pool, &pool->first, PR_TRUE);
+    FreeArenaList(pool, &pool->first);
 #ifdef PL_ARENAMETER
     {
         PLArenaStats *stats, **statsp;
 
-        if (pool->stats.name)
+        if (pool->stats.name) {
             PR_DELETE(pool->stats.name);
+        }
         for (statsp = &arena_stats_list; (stats = *statsp) != 0;
              statsp = &stats->next) {
             if (stats == &pool->stats) {
@@ -348,19 +255,6 @@ PR_IMPLEMENT(void) PL_CompactArenaPool(PLArenaPool *ap)
 
 PR_IMPLEMENT(void) PL_ArenaFinish(void)
 {
-    PLArena *a, *next;
-
-    for (a = arena_freelist; a; a = next) {
-        next = a->next;
-        PR_DELETE(a);
-    }
-    arena_freelist = NULL;
-
-    if (arenaLock) {
-        PR_DestroyLock(arenaLock);
-        arenaLock = NULL;
-    }
-    once = pristineCallOnce;
 }
 
 PR_IMPLEMENT(size_t) PL_SizeOfArenaPoolExcludingPool(
@@ -384,8 +278,9 @@ PR_IMPLEMENT(void) PL_ArenaCountAllocation(PLArenaPool *pool, PRUint32 nb)
 {
     pool->stats.nallocs++;
     pool->stats.nbytes += nb;
-    if (nb > pool->stats.maxalloc)
+    if (nb > pool->stats.maxalloc) {
         pool->stats.maxalloc = nb;
+    }
     pool->stats.variance += nb * nb;
 }
 
@@ -402,8 +297,9 @@ PR_IMPLEMENT(void) PL_ArenaCountGrowth(
     pool->stats.nbytes += incr;
     pool->stats.variance -= size * size;
     size += incr;
-    if (size > pool->stats.maxalloc)
+    if (size > pool->stats.maxalloc) {
         pool->stats.maxalloc = size;
+    }
     pool->stats.variance += size * size;
 }
 
