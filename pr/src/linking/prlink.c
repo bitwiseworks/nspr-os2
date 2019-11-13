@@ -705,7 +705,6 @@ pr_LoadLibraryByPathname(const char *name, PRIntn flags)
         char pszError[_MAX_PATH];
         ULONG ulRc = NO_ERROR;
 
-<<<<<<< HEAD
 #ifdef __KLIBC__
         /* Use a fork-friendly version of DosLoadModule.
          * Also see http://trac.netlabs.org/libc/ticket/372. */
