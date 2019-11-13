@@ -62,6 +62,10 @@ endif
 endif
 endif
 
+VENDOR?=community
+BUILD_INFO=\#\#1\#\# $(shell date +'%d %b %Y %H:%M:%S')     $(shell uname -n)
+BUILDLEVEL_INFO=@\#$(VENDOR):$(MOD_MAJOR_VERSION).$(MOD_MINOR_VERSION).$(MOD_PATCH_VERSION)\#@$(BUILD_INFO)::::$(MOD_PATCH_VERSION)::
+
 #
 # This makefile contains rules for building the following kinds of
 # libraries:
@@ -88,7 +92,11 @@ LIBRARY         = $(OBJDIR)/$(LIBRARY_NAME)$(LIBRARY_VERSION)_s.$(LIB_SUFFIX)
 IMPORT_LIBRARY  = $(OBJDIR)/$(LIBRARY_NAME)$(LIBRARY_VERSION).$(LIB_SUFFIX)
 else
 LIBRARY         = $(OBJDIR)/lib$(LIBRARY_NAME)$(LIBRARY_VERSION)_s.$(LIB_SUFFIX)
+ifeq ($(OS_TARGET), OS2)
+IMPORT_LIBRARY  = $(OBJDIR)/lib$(LIBRARY_NAME)$(LIBRARY_VERSION)_dll.$(LIB_SUFFIX)
+else
 IMPORT_LIBRARY  = $(OBJDIR)/lib$(LIBRARY_NAME)$(LIBRARY_VERSION).$(LIB_SUFFIX)
+endif
 endif
 else
 SHARED_LIBRARY	= $(OBJDIR)/lib$(LIBRARY_NAME)$(LIBRARY_VERSION).$(DLL_SUFFIX)
@@ -398,6 +406,7 @@ ifeq ($(OS_ARCH),SunOS)
 endif
 ifeq ($(OS_ARCH),OS2)
 	echo LIBRARY $(LIBRARY_NAME)$(LIBRARY_VERSION) INITINSTANCE TERMINSTANCE > $@
+	echo "DESCRIPTION \"$(BUILDLEVEL_INFO)@@lib$(LIBRARY_NAME)\"" >> $@
 	echo PROTMODE >> $@
 	echo CODE    LOADONCALL MOVEABLE DISCARDABLE >> $@
 	echo DATA    PRELOAD MOVEABLE MULTIPLE NONSHARED >> $@
