@@ -34,11 +34,13 @@ RESNAME=../../../pr/src/nspr.rc
 endif
 endif
 
+LIBRARY_NAME = my
+
 ifeq (,$(filter-out WINNT OS2,$(OS_ARCH)))
 IMPORT_LIBRARY	= $(OBJDIR)/my.$(LIB_SUFFIX)
 SHARED_LIBRARY	= $(OBJDIR)/my.dll
 ifeq ($(OS_ARCH), OS2)
-MAPFILE		= $(OBJDIR)/my.def
+MAPFILE 	= $(OBJDIR)/$(LIBRARY_NAME)$(MOD_MAJOR_VERSION).def
 GARBAGE		+= $(MAPFILE)
 MKSHLIB		+= $(MAPFILE)
 endif
