@@ -471,6 +471,9 @@ PRStatus _PR_WaitOS2Process(PRProcess *process,
     RESULTCODES results;
     PID pidEnded = 0;
 
+    if (exitCode)
+      *exitCode = 0;
+
     ulRetVal = DosWaitChild(DCWA_PROCESS, DCWW_WAIT,
                             &results,
                             &pidEnded, process->md.pid);
@@ -478,6 +481,7 @@ PRStatus _PR_WaitOS2Process(PRProcess *process,
     if (ulRetVal != NO_ERROR) {
         printf("\nDosWaitChild rc = %lu\n", ulRetVal);
         PR_SetError(PR_UNKNOWN_ERROR, ulRetVal);
+        *exitCode = (int)ulRetVal;
         return PR_FAILURE;
     }
     PR_DELETE(process);
