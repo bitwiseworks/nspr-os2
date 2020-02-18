@@ -182,7 +182,7 @@ int main(int argc, char **argv)
     /* ---------------------------------------------------------------------- */
     /* check that PR_DuplicateEnvironment() agrees with PR_GetEnv() */
     {
-#if defined(XP_UNIX) && (!defined(DARWIN) || defined(HAVE_CRT_EXTERNS_H))
+#if defined(XP_UNIX) && (!defined(DARWIN) || defined(HAVE_CRT_EXTERNS_H)) || defined(XP_OS2)
         static const PRBool expect_failure = PR_FALSE;
 #else
         static const PRBool expect_failure = PR_TRUE;
